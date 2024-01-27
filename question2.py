@@ -1,97 +1,209 @@
-import random
 import matplotlib.pyplot as plt
 import time
+import numpy as np
 
 # Genetic Algorithm Parameters
 population_size = 200
 mutation_probability = 0.25
 crossover_probability = 0.85
 generations = 100
-num_strings = 4
+string_length = 6 # Number of genes/bytes in each string
+num_strings = 4 # Number of strings in each chromosome
+fitness_function = "(3 * x1**2 * x3 * x4**3 ) + (2 * x2 * x3**3 * x4**2) + (4 * x1 * x2)" 
+ranges = [(2, 5), (5, 10), (0, 6), (10, 15)]
+chromesome_length = num_strings * string_length # Number of genes/bytes in each chromosome
 
-# Function to generate a random individual with decimal values
-def generate_individual():
-    return [random.uniform(0, 1) for _ in range(num_strings)]
+# Function to generate initial generation with decimal values
+def generateInitialPopulation():
+    population = np.zeros((population_size))
+    
+    for i in range(population_size):
+        for j in range(num_strings):
+            lower, upper = ranges[j]
+            # Generate a random decimal value between the lower and upper bounds of the current string
+            population[i, j * string_length: (j + 1) * string_length] = np.random.uniform(lower, upper, size=string_length)
+    print(population)
+    return population
 
-# Function to decode chromosome to real values within specified ranges
-def decode_chromosome(chromosome, ranges):
-    decoded = [lower + value * (upper - lower) for value, (lower, upper) in zip(chromosome, ranges)]
-    return decoded
 
-# Function to evaluate the fitness of an individual
-def fitness(x, y, z, k):
-    return 3 * x**2 * y * z**3 + 2 * y * z**3 * k**2 + 4 * x * y
+# Evaluation: Function to decode and evaluate the fitness of each chromosome
+def evalation(population_matrix):
+    de_values = population_matrix.reshape((population_size, num_strings, string_length))
 
-# Function for two-point crossover
-def crossover(parent1, parent2):
-    crossover_point = random.randint(1, num_strings - 2)
-    child1 = parent1[:crossover_point] + parent2[crossover_point:]
-    child2 = parent2[:crossover_point] + parent1[crossover_point:]
-    return child1, child2
-
-# Function to perform mutation
-def mutate(individual):
-    for i in range(num_strings):
-        if random.uniform(0, 1) < mutation_probability:
-            individual[i] = random.uniform(0, 1)
-    return individual
+    # Evaluate fitness of each chromosome using the fitness function
+    fitness = np.zeros((population_size, 1)) # Create a matrix to store the fitness of each chromosome
+    for i in range(population_size): 
+        x1, x2, x3, x4 = de_values[i]
+        fitness[i] = eval(fitness_function)
+        
+    return fitness
 
 # Function for roulette wheel selection
-def roulette_wheel_selection(population, fitness_values):
-    total_fitness = sum(fitness_values)
-    probabilities = [fit / total_fitness for fit in fitness_values]
-    selected = random.choices(population, weights=probabilities)
-    return selected[0]
+def roulette_wheel_selection(fitness, population_matrix):
+    # Make all fitness values positive
+    if min(fitness) < 0:
+        fitness = fitness + abs(min(fitness))
+        
+    # Calculate the total fitness of the population
+    cumulative_fitness = np.cumsum(fitness)
+    total_fitness = np.sum(fitness)
+
+    # Generate random numbers between 0 and 1 for the roulette wheel
+    random_numbers = np.random.random_sample(population_size)
+
+    # Select the chromosomes that corresponds to the random number based on the cumulative fitness
+    selected_chromosomes = []
+    
+    for number in random_numbers:
+        random_number = number * total_fitness
+        for i in range(population_size):
+            if random_number < cumulative_fitness[i]:
+                selected_chromosomes.append(i)
+                break
+
+    # Get the index of chromosome with the best fitness
+    best_index = np.argmax(fitness)
+
+    # Create a new population matrix with the selected chromosomes
+    new_population_matrix = np.array(population_matrix[selected_chromosomes])
+
+    return best_index, new_population_matrix
+
+
+# Function for two-point crossover
+def two_point_crossover(parent1, parent2, crossover_points):
+    child1 = np.concatenate((parent1[:crossover_points[0]], parent2[crossover_points[0]:crossover_points[1]], parent1[crossover_points[1]:]))
+    child2 = np.concatenate((parent2[:crossover_points[0]], parent1[crossover_points[0]:crossover_points[1]], parent2[crossover_points[1]:]))
+    return child1, child2
+
+# Function to perform crossover
+def crossover(population_matrix):
+    # Initialize a new matrix to store the children
+    new_population_matrix = np.zeros_like(population_matrix)
+
+    for i in range(population_size // 2): # For each chromosome pair
+        # Select two random indices for crossover pair
+        parent_indices = np.random.choice(population_size, size=2, replace=False)
+        parent1, parent2 = population_matrix[parent_indices]
+
+        if np.random.rand() < crossover_probability:     
+            # Select two random crossover points       
+            crossover_points = np.sort(np.random.choice(string_length, size=2, replace=False))
+
+            for j in range(num_strings): # For each string in the chromosome
+                start_index = j * string_length # The start index of the current string
+                end_index = start_index + string_length
+
+                parent1_string = parent1[start_index:end_index]
+                parent2_string = parent2[start_index:end_index]
+
+                child1, child2 = two_point_crossover(parent1_string, parent2_string, crossover_points)
+                new_population_matrix[i * 2, start_index:end_index] = child1
+                new_population_matrix[i * 2 + 1, start_index:end_index] = child2
+
+        else:
+            # Copy the parents into the new population matrix as children
+            new_population_matrix[i * 2] = parent1
+            new_population_matrix[i * 2 + 1] = parent2
+
+    return new_population_matrix
+
+# Function to perform mutation
+def mutation(population_matrix):
+    # Initialize a new matrix to store the children
+    new_population_matrix = np.zeros_like(population_matrix)
+
+    # Perform mutation for each chromosome
+    for i in range(population_size // 2):
+
+        # Select two random indices for mutation pair
+        parent_indices = np.random.choice(population_size, size=2, replace=False)
+
+        # Get the chromosomes for mutation
+        parent1, parent2 = population_matrix[parent_indices]
+
+        new_population_matrix[i * 2] = parent1
+        new_population_matrix[i * 2 + 1] = parent2
+
+        # Check if mutation should be performed based on the mutation rate
+        if np.random.rand() < mutation_probability:
+            # Select a random mutation point
+            mutation_point = np.random.randint(1, string_length)
+
+            # Get the index of the mutation point for each string
+            mutate_point = string_length - mutation_point
+
+            # Perform mutation for each string
+            for j in range(num_strings):
+                # Perform mutation for the current string
+                new_population_matrix[i * 2, mutate_point] = parent2[mutate_point]
+                new_population_matrix[i * 2 + 1, mutate_point] = parent1[mutate_point]
+
+                mutate_point += string_length
+
+    return new_population_matrix
 
 # Main Genetic Algorithm function
-def genetic_algorithm(population_size, num_strings, generations):
-    ranges = [(2, 5), (5, 10), (0, 6), (10, 15)]
-    population = [generate_individual() for _ in range(population_size)]
-    best_fitness_per_generation = []
-
-    for generation in range(generations):
-        decoded_population = [decode_chromosome(individual, ranges) for individual in population]
-        fitness_values = [fitness(*decoded) for decoded in decoded_population]
-
-        best_individual = population[fitness_values.index(max(fitness_values))]
-        best_fitness_per_generation.append(max(fitness_values))
-
-        print(f"Generation {generation + 1}: Best Fitness - {max(fitness_values)}")
-
-        new_population = [best_individual]  # Keep the best individual
-
-        while len(new_population) < population_size:
-            parent1 = roulette_wheel_selection(population, fitness_values)
-            parent2 = roulette_wheel_selection(population, fitness_values)
-
-            if random.uniform(0, 1) < crossover_probability:
-                offspring1, offspring2 = crossover(parent1, parent2)
-                offspring1 = mutate(offspring1)
-                offspring2 = mutate(offspring2)
-                new_population.extend([offspring1, offspring2])
-            else:
-                new_population.extend([mutate(parent1), mutate(parent2)])
-
-        population = new_population
-
-    return best_individual, best_fitness_per_generation
-
-if __name__ == "__main__":
-    start_time = time.time()
-
-    best_solution, best_fitness_per_generation = genetic_algorithm(population_size, num_strings, generations)
-
-    end_time = time.time()
-    computation_time = end_time - start_time
-
-    print("\nBest Solution:", best_solution)
-    print("Best Fitness:", fitness(*decode_chromosome(best_solution, [(2, 5), (5, 10), (0, 6), (10, 15)])))
+def main():
+    start_time = time.time() # Start time of the algorithm
     
+    # Initial Generation i.e generation = 0
+    population_matrix = generateInitialPopulation()
+    fitness = evalation(population_matrix)
+    best_index, new_population_matrix = roulette_wheel_selection(fitness, population_matrix)
+
+    best_solution = population_matrix[best_index] 
+    best_fitness = fitness[best_index]
+    
+    best_fitness_per_generation = []
+    generation_list = []
+
+    for generation in range(1, generations + 1):
+        # Update the population matrix
+        population_matrix = new_population_matrix
+
+        # Perform crossover
+        population_matrix = crossover(population_matrix)
+
+        # Perform mutation
+        population_matrix = mutation(population_matrix)
+
+        # Evaluate fitness
+        fitness = evalation(population_matrix)
+
+        # Selection
+        best_index, new_population_matrix = roulette_wheel_selection(fitness, population_matrix)
+
+        # Update best solution if a better solution is found
+        if fitness[best_index] > best_fitness:
+            best_solution = population_matrix[best_index]
+            best_fitness = fitness[best_index]
+
+        # Store data for plotting
+        generation_list.append(generation)
+        best_fitness_per_generation.append(best_fitness)
+
+        # Print the best solution and fitness for each generation
+        print(f"Generation {generation}: Best Fitness: {best_fitness}")
+    
+    end_time = time.time() # End time of the algorithm
+    computation_time = end_time - start_time # Computation time of the algorithm
+
+    # Print the best solution found so far
+    print("Best Solution: ", best_solution)
+    print("Best Fitness: ", best_fitness)
+
     # Plotting
-    plt.plot(range(1, generations + 1), best_fitness_per_generation, marker='o')
-    plt.title('Generation Number vs Best Fitness')
-    plt.xlabel('Generation Number')
+    plt.plot(generation_list, best_fitness_per_generation, marker='o', color='violet')
+    plt.title('Best Fitness Over Generations')
+    plt.xlabel('Generation')
     plt.ylabel('Best Fitness')
+    plt.grid()
+    plt.savefig("question2.png")
     plt.show()
 
     print(f"\nComputation Time: {computation_time} seconds")
+
+
+if __name__ == "__main__":
+    main()

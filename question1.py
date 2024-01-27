@@ -1,4 +1,3 @@
-import random
 import matplotlib.pyplot as plt
 import time
 import numpy as np
@@ -36,8 +35,7 @@ def evalation(population_matrix):
             start_index = j * string_length
             end_index = start_index + string_length
             
-            lower = ranges[j][0] # The lower bound of the current string
-            upper = ranges[j][1] # The upper bound of the current string
+            lower, upper = ranges[j] # The lower and upper bounds of the current string
 
             binary = population_matrix[i, start_index:end_index] # The binary representation of the current string. Note: i is the index of the current row you are interested in
             decimal = binary_to_decimal(binary) # The decimal representation of the current string
@@ -199,7 +197,7 @@ def main():
         best_fitness_per_generation.append(best_fitness)
 
         # Print the best solution and fitness for each generation
-        print(f"Generation {generation}: Best Solution: {best_solution}, Best Fitness: {best_fitness}")
+        print(f"Generation {generation}: Best Fitness: {best_fitness}")
     
     end_time = time.time() # End time of the algorithm
     computation_time = end_time - start_time # Computation time of the algorithm
